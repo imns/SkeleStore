@@ -1,10 +1,3 @@
-//
-//  File.swift
-//
-//
-//  Created by Nate Smith on 3/1/24.
-//
-
 import Foundation
 
 @available(macOS 10.15, *)
@@ -51,6 +44,16 @@ actor DocumentAdapter<T: Codable & Identifiable>: Storable {
             return nil
         }
         return try JSONDecoder().decode(T.self, from: jsonData)
+    }
+
+    func fetchAll() async throws -> [T] {
+        let sql = "SELECT body FROM documents;"
+        let results = try await storage.query(sql, binds: [])
+        return try results.compactMap { row in
+            guard case let .text(jsonString) = row[0] else { return nil }
+            guard let jsonData = jsonString.data(using: .utf8) else { return nil }
+            return try JSONDecoder().decode(T.self, from: jsonData)
+        }
     }
 
     func update(document: T) async throws {

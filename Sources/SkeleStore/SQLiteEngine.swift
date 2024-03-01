@@ -45,23 +45,33 @@ public actor SQLiteEngine {
 
     func setupDatabase() async throws {
         if db == nil {
-            throw SQLiteError(reason: .connection, message:
-                "You must open the database connection before calling `setupDatabase()`")
+            throw SQLiteError(reason: .connection, message: "You must open the database connection before calling `setupDatabase()`")
         }
 
-        let createTableSQL = """
-        CREATE TABLE IF NOT EXISTS documents (
-            id TEXT PRIMARY KEY,
-            body TEXT NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-        """
-        // TODO: Should these be wrapped in a transaction?
-        try await execute(sql: createTableSQL, binds: [])
-        try await execute(sql: "PRAGMA journal_mode = WAL")
-        try await execute(sql: "PRAGMA synchronous = NORMAL")
-        try await execute(sql: "PRAGMA foreign_keys = ON")
+        // Start the transaction
+        try await execute(sql: "BEGIN TRANSACTION;", binds: [])
+
+        do {
+            let createTableSQL = """
+            CREATE TABLE IF NOT EXISTS documents (
+                id TEXT PRIMARY KEY,
+                body TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+            try await execute(sql: createTableSQL, binds: [])
+            try await execute(sql: "PRAGMA journal_mode = WAL;", binds: [])
+            try await execute(sql: "PRAGMA synchronous = NORMAL;", binds: [])
+            try await execute(sql: "PRAGMA foreign_keys = ON;", binds: [])
+
+            // Commit the transaction if all operations succeed
+            try await execute(sql: "COMMIT;", binds: [])
+        } catch {
+            // Rollback the transaction in case of failure
+            try await execute(sql: "ROLLBACK;", binds: [])
+            throw error // Rethrow the error to handle it upstream
+        }
     }
 
     func createIndexes() async throws {
