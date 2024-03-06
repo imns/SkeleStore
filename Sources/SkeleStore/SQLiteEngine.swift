@@ -26,7 +26,9 @@ public actor SQLiteEngine {
     typealias ConnectionHandle = OpaquePointer
     typealias StatementHandle = OpaquePointer
 
-    var db: ConnectionHandle?
+    private var db: ConnectionHandle?
+
+    public init() {}
 
     public func open(storage: StorageType = .memory) async throws {
         let path: String
@@ -43,10 +45,18 @@ public actor SQLiteEngine {
         }
     }
 
-    func setupDatabase() async throws {
+    public func setupDatabase() async throws {
         if db == nil {
             throw SQLiteError(reason: .connection, message: "You must open the database connection before calling `setupDatabase()`")
         }
+
+        do {
+            // Quick check to make sure the table isn't already created
+            try await query("select id from documents limit 1;")
+            print("Database already exists")
+            return
+
+        } catch {}
 
         // Start the transaction
         try await execute(sql: "BEGIN TRANSACTION;", binds: [])
@@ -54,16 +64,19 @@ public actor SQLiteEngine {
         do {
             let createTableSQL = """
             CREATE TABLE IF NOT EXISTS documents (
-                id TEXT PRIMARY KEY,
+                id   TEXT GENERATED ALWAYS AS (json_extract(body, '$.id')) VIRTUAL NOT NULL UNIQUE,
                 body TEXT NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );
+
+            CREATE INDEX IF NOT EXISTS id_idx ON documents(id);
+
+            PRAGMA journal_mode = WAL;
+            PRAGMA foreign_keys = ON;
+            PRAGMA foreign_keys = ON;
             """
             try await execute(sql: createTableSQL, binds: [])
-            try await execute(sql: "PRAGMA journal_mode = WAL;", binds: [])
-            try await execute(sql: "PRAGMA synchronous = NORMAL;", binds: [])
-            try await execute(sql: "PRAGMA foreign_keys = ON;", binds: [])
 
             // Commit the transaction if all operations succeed
             try await execute(sql: "COMMIT;", binds: [])
@@ -74,10 +87,11 @@ public actor SQLiteEngine {
         }
     }
 
-    func createIndexes() async throws {
-        let createIndexSQL = "CREATE INDEX IF NOT EXISTS idx_document_id ON documents (json_extract(body, '$.id'));"
-        try await execute(sql: createIndexSQL, binds: [])
-    }
+//
+//    func createIndexes() async throws {
+//        let createIndexSQL = "CREATE INDEX IF NOT EXISTS idx_document_id ON documents (json_extract(body, '$.id'));"
+//        try await execute(sql: createIndexSQL, binds: [])
+//    }
 
     private func bind(_ stmt: StatementHandle?, binds: [SQLiteData]) throws {
         for (i, bind) in binds.enumerated() {

@@ -1,7 +1,6 @@
 import Foundation
 
-@available(macOS 10.15, *)
-@available(iOS 13.0, *)
+@available(iOS 13.0, macOS 10.15, *)
 protocol Storable {
     associatedtype Document: Codable
     var storage: SQLiteEngine { get }
@@ -12,21 +11,21 @@ protocol Storable {
     func delete(withID id: String) async throws
 }
 
-@available(macOS 10.15, *)
-@available(iOS 13.0, *)
-actor DocumentAdapter<T: Codable & Identifiable>: Storable {
+@available(iOS 13.0, macOS 10.15, *)
+public actor DocumentAdapter<T: Codable & Identifiable>: Storable {
     typealias Document = T
 
-    let storage: SQLiteEngine
+    let storage: SQLiteEngine = Store.shared.storageEngine
 
-    init(storage: SQLiteEngine) {
+    public init(storage: SQLiteEngine) {
         self.storage = storage
     }
 
     func save(document: T) async throws {
         let jsonData = try JSONEncoder().encode(document)
         let jsonString = String(decoding: jsonData, as: UTF8.self)
-        let sql = "INSERT INTO documents (body) VALUES (?);"
+        let sql = "INSERT INTO documents (body) VALUES json(?);"
+//        let sql = "INSERT INTO documents VALUES(json(?));"
         try await storage.execute(sql: sql, binds: [.text(jsonString)])
     }
 
@@ -59,7 +58,7 @@ actor DocumentAdapter<T: Codable & Identifiable>: Storable {
     func update(document: T) async throws {
         let jsonData = try JSONEncoder().encode(document)
         let jsonString = String(decoding: jsonData, as: UTF8.self)
-        let sql = "UPDATE documents SET body = ? WHERE json_extract(body, '$.id') = ?;"
+        let sql = "UPDATE documents SET body = json(?) WHERE id = ?;"
         try await storage.execute(sql: sql, binds: [.text(jsonString), .text("\(document.id)")])
     }
 
